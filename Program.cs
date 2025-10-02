@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Newtonsoft.Json;
 using PacketDotNet;
 using SharpPcap;
@@ -10,7 +11,7 @@ class Program
 {
     const byte XorKey = 173;
     static string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-    static string logFile = $"Logs/log_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
+    static string logFile = $"log_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
     static Config mainConfig;
 
     static Config LoadConfig()
@@ -280,18 +281,78 @@ class Program
                     if (!Directory.Exists(logDir))
                         Directory.CreateDirectory(logDir);
 
-                    // สร้างไฟล์ log ตามเวลา
-                    string logFileName = $"log_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
-                    string logFilePath = Path.Combine(logDir, logFileName);
+                    string logFilePath = Path.Combine(logDir, logFile);
+                    string addText = "";
+
+                    if(mainCmd == 0x0C)
+                    {
+                        ushort mapId = BitConverter.ToUInt16(pktData, 17);
+                        addText = "(MAP) Id=" + mapId;
+                    }
+                    else if (mainCmd == 0x08)
+                    {
+                        if (subCmd == 0x01) //gain exp ap
+                        {
+                            if (pktData[6] == 0x24) //exp
+                            {
+                                int exp = BitConverter.ToInt32(pktData, 8);
+                                addText = "(GAIN EXP) " + exp;
+                            }
+                            else if (pktData[6] == 0x25) //ap
+                            {
+                                int ap = BitConverter.ToInt32(pktData, 8);
+                                addText = "(GAIN AP) " + ap;
+                            }
+                        }
+                    }
+                    else if (mainCmd == 0x14)
+                    {
+                        if (subCmd == 0x01) // just task
+                        {
+                            ushort talkId = BitConverter.ToUInt16(pktData, 19);
+                            addText = "(TALK) Id=" + talkId;
+                            if (pktData[10] == 6 && pktData[11] == 3)
+                            {
+                                addText += " SELECT ANSWER";
+                            }
+                        }
+                        else if (subCmd == 0x09) // just task
+                        {
+                            addText = "(SELECT ANSWER) Id=" + pktData[6];
+                        }
+                    }
+                    else if (mainCmd == 0x18)
+                    {
+                        ushort taskId = BitConverter.ToUInt16(pktData, 6);
+                        addText = "(TASK) Id=" + taskId;
+
+                        if (subCmd == 0x01) //add setp
+                        {
+                            addText += " (ADD STEP) Step=" + pktData[8];
+                        }
+                        else if (subCmd == 0x02) //reduce setp
+                        {
+                            addText += " (REDUCE STEP) Step=" + pktData[8];
+                        }
+                        if (subCmd == 0x05) //add done
+                        {
+                            addText += " (DONE) Round=" + pktData[8];
+                        }
+                    }
+                    else if (mainCmd == 0x33)
+                    {
+                        if (subCmd == 0x01) //battle
+                        {
+                            addText = "(BATTLE)";
+                        }
+                    }
 
                     using (var sw = new StreamWriter(logFilePath, true))
                     {
-                        sw.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ({direction}) Main={mainCmd:X2} Sub={subCmd:X2}");
+                        sw.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ({direction}) Main={mainCmd:X2} Sub={subCmd:X2} {addText}");
                         sw.WriteLine(hexText);
                         sw.WriteLine(); // เว้นบรรทัด
                     }
-
-                    Console.WriteLine($"[MATCH] Packet #{packetIndex} ({direction}) Main={mainCmd:X2} Sub={subCmd:X2} saved to {logFilePath}");
                 }
 
 
