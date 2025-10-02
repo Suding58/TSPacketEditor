@@ -1,15 +1,54 @@
 ﻿using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
+using Newtonsoft.Json;
 using PacketDotNet;
 using SharpPcap;
+using TSPacketEditor.Config;
 
 class Program
 {
     const byte XorKey = 173;
-    static string logFile = $"log_{DateTime.Now:yyyyMMdd_HHmmss}.bin";
+    static string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+    static string logFile = $"Logs/log_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
+    static Config mainConfig;
+
+    static Config LoadConfig()
+    {
+        string json = "";
+        string configDir = Path.Combine(baseDir, "Config");
+        if (!Directory.Exists(configDir))
+            Directory.CreateDirectory(configDir);
+
+        string configPath = Path.Combine(configDir, "Config.json");
+
+        if (!File.Exists(configPath))
+        {
+            var defaultConfig = new Config
+            {
+                EnableMatching = true,
+                MatchCommands = new List<MatchCommand>
+                {
+                    new MatchCommand { Main = 0, Sub = 0 }
+                }
+            };
+
+            json = JsonConvert.SerializeObject(defaultConfig, Formatting.Indented);
+            File.WriteAllText(configPath, json);
+
+            Console.WriteLine($"Config file not found. Created default config at {configPath}");
+        }
+        else
+        {
+            json = File.ReadAllText(configPath);
+        }
+
+        return JsonConvert.DeserializeObject<Config>(json)!;
+    }
 
     static void Main(string[] args)
     {
+        mainConfig = LoadConfig();
         Console.OutputEncoding = Encoding.UTF8;
         Console.WriteLine("=== Diagnostic Multi-adapter Packet Sniffer (dynamic filter) ===\n");
 
@@ -154,17 +193,6 @@ class Program
             var raw = e.GetPacket();
             var parsed = Packet.ParsePacket(raw.LinkLayerType, raw.Data);
 
-            // สร้างชื่อไฟล์ log ตามเวลาปัจจุบัน
-
-            // กำหนดคู่ Main/Sub ที่ต้องการจับหลายค่า
-            var matchList = new List<(ushort Main, ushort Sub)>
-            {
-                (0x01, 0x02),
-                (0x03, 0x04),
-                (0x10, 0x20),
-                (0x06, 0x00)
-            };
-
             // TCP
             var tcp = parsed.Extract<TcpPacket>();
             if (tcp != null && tcp.PayloadData != null && tcp.PayloadData.Length > 0)
@@ -176,7 +204,7 @@ class Program
                 else if (processPorts.Contains(tcp.DestinationPort)) direction = "Recv";
 
                 Console.WriteLine($"[TCP] {direction} {ip.SourceAddress}:{tcp.SourcePort} -> {ip.DestinationAddress}:{tcp.DestinationPort} Len={tcp.PayloadData.Length}");
-                PrintDecodedPayload(tcp.PayloadData, direction, matchList, logFile);
+                PrintDecodedPayload(tcp.PayloadData, direction);
                 return;
             }
 
@@ -191,7 +219,7 @@ class Program
                 else if (processPorts.Contains(udp.DestinationPort)) direction = "Recv";
 
                 Console.WriteLine($"[UDP] {direction} {ip.SourceAddress}:{udp.SourcePort} -> {ip.DestinationAddress}:{udp.DestinationPort} Len={udp.PayloadData.Length}");
-                PrintDecodedPayload(udp.PayloadData, direction, matchList, logFile);
+                PrintDecodedPayload(udp.PayloadData, direction);
                 return;
             }
         }
@@ -204,9 +232,7 @@ class Program
     // replace existing PrintDecodedPayload with this version
     static void PrintDecodedPayload(
         byte[] payload,
-        string direction,
-        List<(ushort Main, ushort Sub)> matchCommands,
-        string logFilePath)
+        string direction)
     {
         if (payload == null || payload.Length == 0) return;
 
@@ -216,8 +242,6 @@ class Program
         int offset = 0;
         int packetIndex = 0;
 
-        Console.WriteLine(HexDump(decodedAll));
-
         while (offset + 4 <= decodedAll.Length) // ต้องมี header + length
         {
             if (decodedAll[offset] != 0xF4 || decodedAll[offset + 1] != 0x44)
@@ -226,33 +250,51 @@ class Program
                 continue;
             }
 
-            int dataLen = (decodedAll[offset + 2] << 8) | decodedAll[offset + 3];
+            int dataLen = BitConverter.ToUInt16(decodedAll, offset +2);
 
             if (offset + 4 + dataLen > decodedAll.Length)
             {
                 break;
             }
 
-            byte[] pktData = new byte[dataLen];
-            Array.Copy(decodedAll, offset + 4, pktData, 0, dataLen);
+            byte[] pktData = new byte[dataLen + 4];
+            Array.Copy(decodedAll, offset, pktData, 0, dataLen);
             
             // ตรวจสอบ main/sub command
             if (dataLen >= 2)
             {
-                ushort mainCmd = pktData[0];
-                ushort subCmd = pktData[1];
+                Console.WriteLine(HexDump(pktData));
 
-                if (matchCommands.Any(cmd => cmd.Main == mainCmd && ( cmd.Sub == subCmd || cmd.Sub == 0)))
+                ushort mainCmd = pktData[4];
+                ushort subCmd = pktData[5];
+
+                if (mainConfig.MatchCommands.Any(cmd => cmd.Main == mainCmd && (cmd.Sub == subCmd || cmd.Sub == 0)))
                 {
-                    // บันทึกลงไฟล์
-                    using (var fs = new FileStream(logFilePath, FileMode.Append, FileAccess.Write))
-                    using (var bw = new BinaryWriter(fs))
+                    byte[] packetBytes = new byte[4 + dataLen];
+                    Array.Copy(decodedAll, offset, packetBytes, 0, 4 + dataLen);
+
+                    string hexText = BitConverter.ToString(packetBytes).Replace("-", " ");
+
+                    // สร้างโฟลเดอร์ Logs ถ้ายังไม่มี
+                    string logDir = Path.Combine(baseDir, "Logs");
+                    if (!Directory.Exists(logDir))
+                        Directory.CreateDirectory(logDir);
+
+                    // สร้างไฟล์ log ตามเวลา
+                    string logFileName = $"log_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
+                    string logFilePath = Path.Combine(logDir, logFileName);
+
+                    using (var sw = new StreamWriter(logFilePath, true))
                     {
-                        bw.Write(decodedAll, offset, 4 + dataLen); // บันทึก header+length+payload
+                        sw.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ({direction}) Main={mainCmd:X2} Sub={subCmd:X2}");
+                        sw.WriteLine(hexText);
+                        sw.WriteLine(); // เว้นบรรทัด
                     }
 
-                    Console.WriteLine($"   [MATCH] Packet #{packetIndex} ({direction}) Main={mainCmd:X2} Sub={subCmd:X2} saved to {logFilePath}");
+                    Console.WriteLine($"[MATCH] Packet #{packetIndex} ({direction}) Main={mainCmd:X2} Sub={subCmd:X2} saved to {logFilePath}");
                 }
+
+
             }
 
             offset += 4 + dataLen;
