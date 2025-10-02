@@ -258,7 +258,7 @@ class Program
             }
 
             byte[] pktData = new byte[dataLen + 4];
-            Array.Copy(decodedAll, offset, pktData, 0, dataLen);
+            Array.Copy(decodedAll, offset, pktData, 0, pktData.Length);
             
             // ตรวจสอบ main/sub command
             if (dataLen >= 2)
