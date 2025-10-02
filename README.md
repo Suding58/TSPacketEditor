@@ -83,7 +83,7 @@ MIT License – ใช้ได้อิสระเพื่อการศึ�
 ---
 
 ## 👨‍💻 Credits
-พัฒนาโดย **[yourname]**
+พัฒนาโดย **DEVX**
 
 - ใช้ [SharpPcap](https://github.com/chmorgan/sharppcap) สำหรับ packet capture  
 - ใช้ [Newtonsoft.Json](https://www.newtonsoft.com/json) สำหรับการอ่าน config  
