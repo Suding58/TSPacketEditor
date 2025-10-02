@@ -315,13 +315,25 @@ class Program
                                 addText = "(TALK) Id=" + talkId;
                                 if (pktData[10] == 6 && pktData[11] == 3)
                                 {
-                                    addText += " SELECT ANSWER";
+                                    addText += " DIALOG SELECT ANSWER";
                                 }
                             }
                             else
                             {
                                 ushort npcEveId = BitConverter.ToUInt16(pktData, 6);
                                 addText = "(TALK NPC) EveId=" + npcEveId;
+                            }
+                        }
+                        else if (subCmd == 0x08)
+                        {
+                            if (pktData.Length >= 19)
+                            {
+
+                            }
+                            else
+                            {
+                                ushort npcEveId = BitConverter.ToUInt16(pktData, 6);
+                                addText = "(GATE TRIGER) GateId=" + npcEveId;
                             }
                         }
                         else if (subCmd == 0x09) // just task
