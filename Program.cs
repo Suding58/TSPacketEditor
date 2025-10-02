@@ -309,11 +309,19 @@ class Program
                     {
                         if (subCmd == 0x01) // just task
                         {
-                            ushort talkId = BitConverter.ToUInt16(pktData, 19);
-                            addText = "(TALK) Id=" + talkId;
-                            if (pktData[10] == 6 && pktData[11] == 3)
+                            if(pktData.Length >= 19)
                             {
-                                addText += " SELECT ANSWER";
+                                ushort talkId = BitConverter.ToUInt16(pktData, 19);
+                                addText = "(TALK) Id=" + talkId;
+                                if (pktData[10] == 6 && pktData[11] == 3)
+                                {
+                                    addText += " SELECT ANSWER";
+                                }
+                            }
+                            else
+                            {
+                                ushort npcEveId = BitConverter.ToUInt16(pktData, 6);
+                                addText = "(TALK NPC) EveId=" + npcEveId;
                             }
                         }
                         else if (subCmd == 0x09) // just task
