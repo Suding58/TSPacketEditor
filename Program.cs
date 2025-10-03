@@ -283,7 +283,7 @@ class Program
 
                     string logFilePath = Path.Combine(logDir, logFile);
                     string addText = "";
-
+                    bool save = true;
                     if(mainCmd == 0x0C)
                     {
                         ushort mapId = BitConverter.ToUInt16(pktData, 17);
@@ -302,6 +302,10 @@ class Program
                             {
                                 int ap = BitConverter.ToInt32(pktData, 8);
                                 addText = "(GAIN AP) " + ap;
+                            }
+                            else
+                            {
+                                save = false;
                             }
                         }
                     }
@@ -332,8 +336,11 @@ class Program
                             }
                             else
                             {
-                                ushort npcEveId = BitConverter.ToUInt16(pktData, 6);
-                                addText = "(GATE TRIGER) GateId=" + npcEveId;
+                                if(pktData.Length > 6)
+                                {
+                                    ushort npcEveId = BitConverter.ToUInt16(pktData, 6);
+                                    addText = "(GATE TRIGER) GateId=" + npcEveId;
+                                }
                             }
                         }
                         else if (subCmd == 0x09) // just task
@@ -359,6 +366,15 @@ class Program
                             addText += " (DONE) Round=" + pktData[8];
                         }
                     }
+                    else if (mainCmd == 0x0B)
+                    {
+                        if (subCmd == 0x05) //battle position
+                        {
+                            ushort npcId = BitConverter.ToUInt16(pktData, 8);
+
+                            addText = "(BATTLE POSITION) Npc id="+ npcId+" (POS) Row=" + pktData[18]+" Col=" + pktData[19];
+                        }
+                    }
                     else if (mainCmd == 0x33)
                     {
                         if (subCmd == 0x01) //battle
@@ -367,15 +383,16 @@ class Program
                         }
                     }
 
-                    using (var sw = new StreamWriter(logFilePath, true))
+                    if (save)
                     {
-                        sw.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ({direction}) Main={mainCmd:X2} Sub={subCmd:X2} {addText}");
-                        sw.WriteLine(hexText);
-                        sw.WriteLine(); // เว้นบรรทัด
+                        using (var sw = new StreamWriter(logFilePath, true))
+                        {
+                            sw.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ({direction}) Main={mainCmd:X2} Sub={subCmd:X2} {addText}");
+                            sw.WriteLine(hexText);
+                            sw.WriteLine();
+                        }
                     }
                 }
-
-
             }
 
             offset += 4 + dataLen;
